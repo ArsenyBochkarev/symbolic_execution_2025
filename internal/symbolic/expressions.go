@@ -1,7 +1,11 @@
 // Package symbolic содержит конкретные реализации символьных выражений
 package symbolic
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/ebukreev/go-z3/z3"
+)
 
 // SymbolicExpression - базовый интерфейс для всех символьных выражений
 type SymbolicExpression interface {
@@ -17,8 +21,9 @@ type SymbolicExpression interface {
 
 // SymbolicVariable представляет символьную переменную
 type SymbolicVariable struct {
-	Name     string
-	ExprType ExpressionType
+	Name      string
+	ExprType  ExpressionType
+	InnerType InnerType // parameter for array
 }
 
 // NewSymbolicVariable создаёт новую символьную переменную
@@ -26,6 +31,15 @@ func NewSymbolicVariable(name string, exprType ExpressionType) *SymbolicVariable
 	return &SymbolicVariable{
 		Name:     name,
 		ExprType: exprType,
+	}
+}
+
+// NewSymbolicVariableArray создаёт новую символьную переменную с типом элементов
+func NewSymbolicVariableArray(name string, innerTy InnerType) *SymbolicVariable {
+	return &SymbolicVariable{
+		Name:      name,
+		ExprType:  ArrayType,
+		InnerType: innerTy,
 	}
 }
 
@@ -101,28 +115,88 @@ type BinaryOperation struct {
 	Operator BinaryOperator
 }
 
-// TODO: Реализуйте следующие методы в рамках домашнего задания
-
 // NewBinaryOperation создаёт новую бинарную операцию
 func NewBinaryOperation(left, right SymbolicExpression, op BinaryOperator) *BinaryOperation {
-	// TODO: Реализовать
 	// Создать новую бинарную операцию и проверить совместимость типов
-	panic("не реализовано")
+	if left.Type() != ArrayType && left.Type() != right.Type() {
+		panic("type error")
+	}
+
+	return &BinaryOperation{
+		Left:     left,
+		Right:    right,
+		Operator: op,
+	}
 }
 
 // Type возвращает результирующий тип операции
 func (bo *BinaryOperation) Type() ExpressionType {
-	// TODO: Реализовать
 	// Определить результирующий тип на основе операции и типов операндов
 	// Например: int + int = int, int < int = bool
-	panic("не реализовано")
+	// Арифметические операторы
+	switch bo.Operator {
+	case ADD:
+		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
+			panic("BoolType in ADD operation")
+		}
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in ADD operation")
+		}
+		return IntType
+	case SUB:
+		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
+			panic("BoolType in SUB operation")
+		}
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in SUB operation")
+		}
+		return IntType
+	case MUL:
+		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
+			panic("BoolType in MUL operation")
+		}
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in MUL operation")
+		}
+		return IntType
+	case MOD:
+		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
+			panic("BoolType in MOD operation")
+		}
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in MOD operation")
+		}
+		return IntType
+	case DIV:
+		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
+			panic("BoolType in DIV operation")
+		}
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in DIV operation")
+		}
+		return IntType
+
+	// Операторы сравнения
+	case NE, EQ:
+		return BoolType
+	case LE, LT, GE, GT:
+		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
+			panic("ArrayType in LE/LT/GE/GT operation")
+		}
+		return BoolType
+
+	case SELECT:
+		return bo.Left.(*SymbolicVariable).InnerType.ExprTy
+
+	default:
+		panic("unknown binary operator")
+	}
 }
 
 // String возвращает строковое представление операции
 func (bo *BinaryOperation) String() string {
-	// TODO: Реализовать
 	// Формат: "(left operator right)"
-	panic("не реализовано")
+	return "(" + bo.Left.String() + bo.Operator.String() + bo.Right.String() + ")"
 }
 
 // Accept реализует Visitor pattern
@@ -136,13 +210,18 @@ type LogicalOperation struct {
 	Operator LogicalOperator
 }
 
-// TODO: Реализуйте следующие методы в рамках домашнего задания
-
 // NewLogicalOperation создаёт новую логическую операцию
 func NewLogicalOperation(operands []SymbolicExpression, op LogicalOperator) *LogicalOperation {
-	// TODO: Реализовать
 	// Создать логическую операцию и проверить типы операндов
-	panic("не реализовано")
+	for i := range operands {
+		if operands[i].Type() == ArrayType {
+			panic("ArrayType in logical expression")
+		}
+	}
+	return &LogicalOperation{
+		Operands: operands,
+		Operator: op,
+	}
 }
 
 // Type возвращает тип логической операции (всегда bool)
@@ -152,11 +231,21 @@ func (lo *LogicalOperation) Type() ExpressionType {
 
 // String возвращает строковое представление логической операции
 func (lo *LogicalOperation) String() string {
-	// TODO: Реализовать
 	// Для NOT: "!operand"
 	// Для AND/OR: "(operand1 && operand2 && ...)"
 	// Для IMPLIES: "(operand1 => operand2)"
-	panic("не реализовано")
+	switch lo.Operator {
+	case AND:
+		return "(" + lo.Operands[0].String() + " && " + lo.Operands[1].String() + ")"
+	case OR:
+		return "(" + lo.Operands[0].String() + " || " + lo.Operands[1].String() + ")"
+	case NOT:
+		return "!" + lo.Operands[0].String()
+	case IMPLIES:
+		return "(" + lo.Operands[0].String() + " => " + lo.Operands[1].String() + ")"
+	default:
+		return "unknown"
+	}
 }
 
 // Accept реализует Visitor pattern
@@ -182,6 +271,9 @@ const (
 	LE // меньше или равно
 	GT // больше
 	GE // больше или равно
+
+	// Доступ к элементу массива
+	SELECT
 )
 
 // String возвращает строковое представление оператора
@@ -209,6 +301,8 @@ func (op BinaryOperator) String() string {
 		return ">"
 	case GE:
 		return ">="
+	case SELECT:
+		return "@"
 	default:
 		return "unknown"
 	}
@@ -240,8 +334,174 @@ func (op LogicalOperator) String() string {
 	}
 }
 
-// TODO: Добавьте дополнительные типы выражений по необходимости:
-// - UnaryOperation (унарные операции: -x, !x)
-// - ArrayAccess (доступ к элементам массива: arr[index])
-// - FunctionCall (вызовы функций: f(x, y))
-// - ConditionalExpression (тернарный оператор: condition ? true_expr : false_expr)
+// TernaryOperation представляет тернарный оператор (ConditionalExpression)
+type TernaryOperation struct {
+	Condition SymbolicExpression
+	TrueExpr  SymbolicExpression
+	FalseExpr SymbolicExpression
+}
+
+// NewTernaryOperation создаёт новый тернарный оператор
+func NewTernaryOperation(cond SymbolicExpression, trueExpr, falseExpr SymbolicExpression) *TernaryOperation {
+	// Создать тернарный оператор и проверить типы
+	if trueExpr.Type() != falseExpr.Type() {
+		panic("incompatible types in trueExpr and falseExpr")
+	}
+	if cond.Type() != BoolType {
+		panic("non-bool type in ternary operation condition")
+	}
+
+	return &TernaryOperation{
+		Condition: cond,
+		TrueExpr:  trueExpr,
+		FalseExpr: falseExpr,
+	}
+}
+
+// Accept реализует Visitor pattern
+func (lo *TernaryOperation) Accept(visitor Visitor) interface{} {
+	return visitor.VisitTernaryOperation(lo)
+}
+
+// String возвращает строковое представление тернарного оператора
+func (op TernaryOperation) String() string {
+	return "(if " + op.Condition.String() + " then " + op.TrueExpr.String() + " else " + op.FalseExpr.String() + ")"
+}
+
+// Type возвращает тип тернарного оператора (тип возвращаемого в TrueExpr или FalseExpr значения)
+func (to *TernaryOperation) Type() ExpressionType {
+	return to.TrueExpr.Type()
+}
+
+// Операторы для унарных выражений
+type UnaryOperator int
+
+const (
+	UN_SUB UnaryOperator = iota
+	UN_NOT
+)
+
+// String возвращает строковое представление унарного оператора
+func (uo *UnaryOperator) String() string {
+	switch *uo {
+	case UN_NOT:
+		return "!"
+	case UN_SUB:
+		return "-"
+	default:
+		panic("unknown unary operator")
+	}
+}
+
+// UnaryOperation представляет унарный оператор
+type UnaryOperation struct {
+	Operator UnaryOperator
+	Expr     SymbolicExpression
+}
+
+// NewUnaryOperation создаёт новый тернарный оператор
+func NewUnaryOperation(op UnaryOperator, expr SymbolicExpression) *UnaryOperation {
+	// Создать унарный оператор и проверить типы
+	if op != UN_NOT && op != UN_SUB {
+		panic("invalid operation in UnaryOperation")
+	}
+	if op == UN_NOT && expr.Type() != BoolType {
+		panic("incompatible type for UN_NOT in UnaryExpression")
+	}
+	if op == UN_SUB && expr.Type() != IntType {
+		panic("incompatible type for UN_SUB in UnaryExpression")
+	}
+
+	return &UnaryOperation{
+		Operator: op,
+		Expr:     expr,
+	}
+}
+
+// Accept реализует Visitor pattern
+func (uo *UnaryOperation) Accept(visitor Visitor) interface{} {
+	return visitor.VisitUnaryOperation(uo)
+}
+
+// String возвращает строковое представление тернарного оператора
+func (op UnaryOperation) String() string {
+	return "(" + op.Operator.String() + op.Expr.String() + ")"
+}
+
+// Type возвращает тип унарного оператора (тип возвращаемого в Expr значения)
+func (uo *UnaryOperation) Type() ExpressionType {
+	return uo.Expr.Type()
+}
+
+func Type2Sort(ctx *z3.Context, ty *InnerType) z3.Sort {
+	switch ty.ExprTy {
+	case IntType:
+		return ctx.IntSort()
+	case BoolType:
+		return ctx.BoolSort()
+	case ArrayType:
+		return ctx.ArraySort(Type2Sort(ctx, ty.InnerTy), ctx.IntSort())
+
+	default:
+		panic("unknown type")
+	}
+}
+
+// Function представляет функцию
+type Function struct {
+	Name    string
+	Args    []InnerType
+	RetType InnerType
+}
+
+// NewFunction создаёт новую функцию
+func NewFunction(name string, argsTypes []InnerType, retTy InnerType) *Function {
+	return &Function{
+		Name:    name,
+		Args:    argsTypes,
+		RetType: retTy,
+	}
+}
+
+// Type возвращает тип переменной
+func (sv *Function) Type() ExpressionType {
+	return FunctionType
+}
+
+// String возвращает строковое представление переменной
+func (sv *Function) String() string {
+	return "(" + sv.Name + ": Arg1 x Arg2 x ... x ArgN -> " + sv.RetType.ExprTy.String() + ")" // FIXME
+}
+
+// Accept реализует Visitor pattern
+func (sv *Function) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFunction(sv)
+}
+
+type FunctionCall struct {
+	FunctionDecl Function
+	Args         []SymbolicExpression
+}
+
+// NewFunctionCall создаёт вызов функции
+func NewFunctionCall(function Function, args []SymbolicExpression) *FunctionCall {
+	return &FunctionCall{
+		FunctionDecl: function,
+		Args:         args,
+	}
+}
+
+// Type возвращает тип переменной
+func (sv *FunctionCall) Type() ExpressionType {
+	return sv.FunctionDecl.RetType.ExprTy
+}
+
+// String возвращает строковое представление переменной
+func (sv *FunctionCall) String() string {
+	return "(" + sv.FunctionDecl.Name + "(Arg1, Arg2, ..., ArgN))" // FIXME
+}
+
+// Accept реализует Visitor pattern
+func (sv *FunctionCall) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFunctionCall(sv)
+}

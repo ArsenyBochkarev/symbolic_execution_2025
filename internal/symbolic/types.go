@@ -8,8 +8,14 @@ const (
 	IntType ExpressionType = iota
 	BoolType
 	ArrayType
+	FunctionType
 	// Добавьте другие типы по необходимости
 )
+
+type InnerType struct {
+	ExprTy  ExpressionType
+	InnerTy *InnerType
+}
 
 // String возвращает строковое представление типа
 func (et ExpressionType) String() string {
@@ -20,6 +26,8 @@ func (et ExpressionType) String() string {
 		return "bool"
 	case ArrayType:
 		return "array"
+	case FunctionType:
+		return "function"
 	default:
 		return "unknown"
 	}
