@@ -505,3 +505,19 @@ func (sv *FunctionCall) String() string {
 func (sv *FunctionCall) Accept(visitor Visitor) interface{} {
 	return visitor.VisitFunctionCall(sv)
 }
+
+type Ref struct {
+	// TODO: Выбрать и написать внутреннее представление символьной ссылки
+}
+
+func (ref *Ref) Type() ExpressionType {
+	panic("не реализовано")
+}
+
+func (ref *Ref) String() string {
+	panic("не реализовано")
+}
+
+func (ref *Ref) Accept(visitor Visitor) interface{} {
+	panic("не реализовано")
+}
