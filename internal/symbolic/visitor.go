@@ -7,5 +7,8 @@ type Visitor interface {
 	VisitBoolConstant(expr *BoolConstant) interface{}
 	VisitBinaryOperation(expr *BinaryOperation) interface{}
 	VisitLogicalOperation(expr *LogicalOperation) interface{}
-	// TODO: Добавьте методы для других типов выражений по мере необходимости
+	VisitTernaryOperation(expr *TernaryOperation) interface{}
+	VisitUnaryOperation(expr *UnaryOperation) interface{}
+	VisitFunction(expr *Function) interface{}
+	VisitFunctionCall(expr *FunctionCall) interface{}
 }
