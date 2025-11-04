@@ -9,6 +9,8 @@ const (
 	BoolType
 	ArrayType
 	FunctionType
+	ObjectType
+	RefType
 	// Добавьте другие типы по необходимости
 )
 
@@ -28,6 +30,8 @@ func (et ExpressionType) String() string {
 		return "array"
 	case FunctionType:
 		return "function"
+	case RefType:
+		return "reference"
 	default:
 		return "unknown"
 	}
