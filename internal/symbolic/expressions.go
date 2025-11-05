@@ -3,6 +3,7 @@ package symbolic
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/ebukreev/go-z3/z3"
 )
@@ -21,9 +22,10 @@ type SymbolicExpression interface {
 
 // SymbolicVariable представляет символьную переменную
 type SymbolicVariable struct {
-	Name      string
-	ExprType  ExpressionType
-	InnerType InnerType // parameter for array
+	Name       string
+	ExprType   ExpressionType
+	InnerType  InnerType   // parameter for array
+	FieldTypes []InnerType // parameter for objects
 }
 
 // NewSymbolicVariable создаёт новую символьную переменную
@@ -40,6 +42,14 @@ func NewSymbolicVariableArray(name string, innerTy InnerType) *SymbolicVariable 
 		Name:      name,
 		ExprType:  ArrayType,
 		InnerType: innerTy,
+	}
+}
+
+// NewSymbolicVariableObject создаёт новую символьную переменную с массивом типов полей
+func NewSymbolicVariableObject(name string) *SymbolicVariable {
+	return &SymbolicVariable{
+		Name:     name,
+		ExprType: ObjectType,
 	}
 }
 
@@ -118,7 +128,7 @@ type BinaryOperation struct {
 // NewBinaryOperation создаёт новую бинарную операцию
 func NewBinaryOperation(left, right SymbolicExpression, op BinaryOperator) *BinaryOperation {
 	// Создать новую бинарную операцию и проверить совместимость типов
-	if left.Type() != ArrayType && left.Type() != right.Type() {
+	if left.Type() != ObjectType && left.Type() != ArrayType && left.Type() != right.Type() {
 		panic("type error")
 	}
 
@@ -187,6 +197,11 @@ func (bo *BinaryOperation) Type() ExpressionType {
 
 	case SELECT:
 		return bo.Left.(*SymbolicVariable).InnerType.ExprTy
+
+	case FIELD_ACCESS:
+		return bo.Left.Type()
+	case FIELD_ASSIGN:
+		return bo.Right.Type()
 
 	default:
 		panic("unknown binary operator")
@@ -274,6 +289,11 @@ const (
 
 	// Доступ к элементу массива
 	SELECT
+	STORE
+
+	// Доступ к объектам
+	FIELD_ACCESS
+	FIELD_ASSIGN
 )
 
 // String возвращает строковое представление оператора
@@ -303,6 +323,12 @@ func (op BinaryOperator) String() string {
 		return ">="
 	case SELECT:
 		return "@"
+	case STORE:
+		return "="
+	case FIELD_ACCESS:
+		return "."
+	case FIELD_ASSIGN:
+		return "="
 	default:
 		return "unknown"
 	}
@@ -440,7 +466,26 @@ func Type2Sort(ctx *z3.Context, ty *InnerType) z3.Sort {
 	case BoolType:
 		return ctx.BoolSort()
 	case ArrayType:
-		return ctx.ArraySort(Type2Sort(ctx, ty.InnerTy), ctx.IntSort())
+		return ctx.ArraySort(ctx.IntSort(), Type2Sort(ctx, ty.InnerTy))
+	case ObjectType:
+		panic("ObjectType in Type2Sort")
+
+	default:
+		panic("unknown type")
+	}
+}
+
+func Type2Sort2(ctx *z3.Context, expr SymbolicExpression) z3.Sort {
+	switch expr.Type() {
+	case IntType:
+		return ctx.IntSort()
+	case BoolType:
+		return ctx.BoolSort()
+	case ArrayType:
+		innerT := expr.(*SymbolicVariable).InnerType
+		return ctx.ArraySort(ctx.IntSort(), Type2Sort(ctx, &innerT))
+	case ObjectType:
+		panic("ObjectType in Type2Sort2")
 
 	default:
 		panic("unknown type")
@@ -470,7 +515,7 @@ func (sv *Function) Type() ExpressionType {
 
 // String возвращает строковое представление переменной
 func (sv *Function) String() string {
-	return "(" + sv.Name + ": Arg1 x Arg2 x ... x ArgN -> " + sv.RetType.ExprTy.String() + ")" // FIXME
+	return "(" + sv.Name + ": Arg1 x Arg2 x ... x ArgN -> " + sv.RetType.ExprTy.String() + ")"
 }
 
 // Accept реализует Visitor pattern
@@ -498,7 +543,7 @@ func (sv *FunctionCall) Type() ExpressionType {
 
 // String возвращает строковое представление переменной
 func (sv *FunctionCall) String() string {
-	return "(" + sv.FunctionDecl.Name + "(Arg1, Arg2, ..., ArgN))" // FIXME
+	return "(" + sv.FunctionDecl.Name + "(Arg1, Arg2, ..., ArgN))"
 }
 
 // Accept реализует Visitor pattern
@@ -506,18 +551,96 @@ func (sv *FunctionCall) Accept(visitor Visitor) interface{} {
 	return visitor.VisitFunctionCall(sv)
 }
 
+type MemType int
+
+const (
+	Primitive MemType = iota
+	Object
+	Array
+)
+
 type Ref struct {
-	// TODO: Выбрать и написать внутреннее представление символьной ссылки
+	Expr       SymbolicExpression
+	MemTy      MemType
+	ObjectAddr int
+	ArrayAddr  int
+	StructName string
 }
 
 func (ref *Ref) Type() ExpressionType {
-	panic("не реализовано")
+	return RefType
 }
 
 func (ref *Ref) String() string {
-	panic("не реализовано")
+	return "&" + ref.Expr.String()
 }
 
 func (ref *Ref) Accept(visitor Visitor) interface{} {
-	panic("не реализовано")
+	return visitor.VisitRef(ref)
+}
+
+type FieldAccess struct {
+	Obj        SymbolicExpression
+	FieldIdx   int
+	Key        SymbolicExpression
+	StructName string
+	InnerTy    InnerType
+}
+
+// NewFieldAccess создаёт новое обращение к полю объекта
+func NewFieldAccess(obj SymbolicExpression, Idx int, key SymbolicExpression, structName string, innerTy InnerType) *FieldAccess {
+	return &FieldAccess{
+		Obj:        obj,
+		FieldIdx:   Idx,
+		Key:        key,
+		StructName: structName,
+		InnerTy:    innerTy,
+	}
+}
+
+// Type возвращает тип поля
+func (fa *FieldAccess) Type() ExpressionType {
+	return fa.Obj.Type()
+}
+
+// String возвращает строковое представление доступа к элементу массива
+func (fa *FieldAccess) String() string {
+	return "(" + fa.Obj.String() + ")"
+}
+
+// Accept реализует Visitor pattern
+func (fa *FieldAccess) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFieldAccess(fa)
+}
+
+type FieldAssign struct {
+	Obj        SymbolicExpression
+	FieldIdx   int
+	Value      SymbolicExpression
+	StructName string
+}
+
+// NewFieldAccess создаёт новое обращение к полю объекта
+func NewFieldAssign(obj SymbolicExpression, Idx int, v SymbolicExpression, structName string) *FieldAssign {
+	return &FieldAssign{
+		Obj:        obj,
+		FieldIdx:   Idx,
+		Value:      v,
+		StructName: structName,
+	}
+}
+
+// Type возвращает тип поля
+func (fa *FieldAssign) Type() ExpressionType {
+	return fa.Value.Type()
+}
+
+// String возвращает строковое представление переменной
+func (fa *FieldAssign) String() string {
+	return "(" + fa.Obj.String() + "." + strconv.Itoa(fa.FieldIdx) + "=" + fa.Value.String() + ")"
+}
+
+// Accept реализует Visitor pattern
+func (fa *FieldAssign) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFieldAssign(fa)
 }

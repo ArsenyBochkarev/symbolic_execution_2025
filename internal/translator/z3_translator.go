@@ -3,6 +3,8 @@ package translator
 
 import (
 	"math/big"
+	"strconv"
+	"symbolic-execution-course/internal/memory"
 	"symbolic-execution-course/internal/symbolic"
 
 	"github.com/ebukreev/go-z3/z3"
@@ -10,9 +12,11 @@ import (
 
 // Z3Translator транслирует символьные выражения в Z3 формулы
 type Z3Translator struct {
-	ctx    *z3.Context
-	config *z3.Config
-	vars   map[string]z3.Value // Кэш переменных
+	ctx       *z3.Context
+	config    *z3.Config
+	vars      map[string]z3.Value // Кэш переменных
+	objArrays map[string]z3.Array
+	mem       memory.Memory
 }
 
 // NewZ3Translator создаёт новый экземпляр Z3 транслятора
@@ -21,14 +25,15 @@ func NewZ3Translator() *Z3Translator {
 	ctx := z3.NewContext(config)
 
 	return &Z3Translator{
-		ctx:    ctx,
-		config: config,
-		vars:   make(map[string]z3.Value),
+		ctx:       ctx,
+		config:    config,
+		vars:      make(map[string]z3.Value),
+		objArrays: make(map[string]z3.Array),
 	}
 }
 
 // GetContext возвращает Z3 контекст
-func (zt *Z3Translator) GetContext() interface{} {
+func (zt *Z3Translator) GetContext() *z3.Context {
 	return zt.ctx
 }
 
@@ -93,6 +98,14 @@ func (zt *Z3Translator) VisitBoolConstant(expr *symbolic.BoolConstant) interface
 	return zt.ctx.FromBool(expr.Value)
 }
 
+func Field2Key(name string, index int) string {
+	return "index_" + name + "." + strconv.Itoa(index)
+}
+
+func Field2Key2(name string, index string) string {
+	return name + "." + index
+}
+
 // VisitBinaryOperation транслирует бинарную операцию в Z3
 func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) interface{} {
 	// 1. Транслировать левый и правый операнды
@@ -111,6 +124,12 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Mul(rightOp.(z3.Int))
+		case symbolic.ArrayType:
+			// Case for objects fields: addition with 0-indexed element
+			bigint := big.NewInt(0)
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			sel := leftOp.(z3.Array).Select(zr)
+			return sel.(z3.Int).Mul(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -118,6 +137,12 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Add(rightOp.(z3.Int))
+		case symbolic.ArrayType:
+			// Case for objects fields: addition with 0-indexed element
+			bigint := big.NewInt(0)
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			sel := leftOp.(z3.Array).Select(zr)
+			return sel.(z3.Int).Add(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -125,6 +150,12 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Sub(rightOp.(z3.Int))
+		case symbolic.ArrayType:
+			// Case for objects fields: addition with 0-indexed element
+			bigint := big.NewInt(0)
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			sel := leftOp.(z3.Array).Select(zr)
+			return sel.(z3.Int).Sub(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -132,6 +163,12 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Div(rightOp.(z3.Int))
+		case symbolic.ArrayType:
+			// Case for objects fields: addition with 0-indexed element
+			bigint := big.NewInt(0)
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			sel := leftOp.(z3.Array).Select(zr)
+			return sel.(z3.Int).Div(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -139,6 +176,12 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Mod(rightOp.(z3.Int))
+		case symbolic.ArrayType:
+			// Case for objects fields: addition with 0-indexed element
+			bigint := big.NewInt(0)
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			sel := leftOp.(z3.Array).Select(zr)
+			return sel.(z3.Int).Mod(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -152,6 +195,9 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 			return leftOp.(z3.Bool).Eq(rightOp.(z3.Bool))
 		case symbolic.ArrayType:
 			return leftOp.(z3.Array).Eq(rightOp.(z3.Array))
+		case symbolic.ObjectType:
+			// ObjectType here means field access
+			return leftOp.(z3.Int).Eq(rightOp.(z3.Int)) // FIXME !!!!!!!!!
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -197,6 +243,32 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.ArrayType:
 			return leftOp.(z3.Array).Select(rightOp.(z3.Value))
+		default:
+			panic("unknown type in VisitBinaryOperation")
+		}
+
+	case symbolic.FIELD_ACCESS:
+		switch expr.Left.Type() {
+		case symbolic.ObjectType:
+			// TODO: panic if RHS isn't IntConstant
+			str := Field2Key2(expr.Left.String(), expr.Right.String())
+			_, ok := zt.objArrays[str]
+			if !ok {
+				zt.objArrays[str] = z3.Array{}
+			}
+
+			return zt.objArrays[str].Select(rightOp.(z3.Value))
+		default:
+			panic("unknown type in VisitBinaryOperation")
+		}
+	case symbolic.FIELD_ASSIGN:
+		// Treating objects fields as arrays
+		// In correspondance to allocated ones
+		switch expr.Left.Type() {
+		case symbolic.ArrayType: // Treating object fields as arrays
+			bigint := big.NewInt(0) // At 0
+			zr := zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+			return leftOp.(z3.Array).Store(zr, rightOp.(z3.Value))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -285,6 +357,49 @@ func (zt *Z3Translator) VisitFunctionCall(expr *symbolic.FunctionCall) interface
 		args = append(args, translatedArg.(z3.Value))
 	}
 	return decl.(z3.FuncDecl).Apply(args...)
+}
+
+func (zt *Z3Translator) VisitRef(expr *symbolic.Ref) interface{} {
+	switch expr.MemTy {
+	case symbolic.Primitive:
+		return zt.mem.GetPrimitive(expr).(z3.Value)
+	case symbolic.Object:
+		return expr.ObjectAddr
+	default:
+		return expr.ArrayAddr
+	}
+}
+
+func (zt *Z3Translator) VisitFieldAccess(expr *symbolic.FieldAccess) interface{} {
+	str := Field2Key(expr.Key.String(), expr.FieldIdx)
+	index := zt.ctx.Const(str, zt.ctx.IntSort())
+
+	fieldName := Field2Key(expr.StructName, expr.FieldIdx) // Not the same as "str"! We use it internally to locate the particular array for current field
+	_, ok := zt.objArrays[fieldName]
+	if !ok {
+		as := zt.ctx.ArraySort(zt.ctx.IntSort(), symbolic.Type2Sort(zt.ctx, &expr.InnerTy))
+		z := zt.ctx.Const(expr.Obj.String(), as)
+		zt.objArrays[fieldName] = z.(z3.Array)
+	}
+
+	return zt.objArrays[fieldName].Select(index)
+}
+
+func (zt *Z3Translator) VisitFieldAssign(expr *symbolic.FieldAssign) interface{} {
+	str := Field2Key(expr.Obj.String(), expr.FieldIdx)
+	index := zt.ctx.Const(str, zt.ctx.IntSort())
+
+	fieldName := Field2Key(expr.StructName, expr.FieldIdx) // Not the same as "str"! We use it internally to locate the particular array for current field
+	_, ok := zt.objArrays[fieldName]
+	if !ok {
+		as := zt.ctx.ArraySort(zt.ctx.IntSort(), symbolic.Type2Sort2(zt.ctx, expr.Value))
+		z := zt.ctx.Const(expr.Obj.String(), as)
+		zt.objArrays[fieldName] = z.(z3.Array)
+	}
+
+	val := expr.Value.Accept(zt)
+	zt.objArrays[fieldName] = zt.objArrays[fieldName].Store(index, val.(z3.Value))
+	return zt.objArrays[fieldName]
 }
 
 // Вспомогательные методы
