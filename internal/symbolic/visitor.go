@@ -11,4 +11,7 @@ type Visitor interface {
 	VisitUnaryOperation(expr *UnaryOperation) interface{}
 	VisitFunction(expr *Function) interface{}
 	VisitFunctionCall(expr *FunctionCall) interface{}
+	VisitRef(expr *Ref) interface{}
+	VisitFieldAccess(expr *FieldAccess) interface{}
+	VisitFieldAssign(expr *FieldAssign) interface{}
 }
