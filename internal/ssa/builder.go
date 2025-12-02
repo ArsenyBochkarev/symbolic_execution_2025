@@ -28,7 +28,7 @@ func NewBuilder() *Builder {
 
 // ParseAndBuildSSA парсит исходный код Go и создаёт SSA представление
 // Возвращает SSA программу и функцию по имени
-func (b *Builder) ParseAndBuildSSA(source string, funcName string) (*ssa.Function, error) {
+func (b *Builder) ParseAndBuildSSA(source string, funcName string) *ssa.Function {
 	fset := token.NewFileSet()
 
 	file, err := parser.ParseFile(fset, "main.go", source, parser.ParseComments)
@@ -37,7 +37,7 @@ func (b *Builder) ParseAndBuildSSA(source string, funcName string) (*ssa.Functio
 	}
 	files := []*ast.File{file}
 
-	pkg := types.NewPackage("homework1/main.go", "main")
+	pkg := types.NewPackage("main", "main")
 
 	lprog, _, err := ssautil.BuildPackage(
 		&types.Config{Importer: importer.Default()}, fset, pkg, files, ssa.SanityCheckFunctions)
@@ -56,12 +56,17 @@ func (b *Builder) ParseAndBuildSSA(source string, funcName string) (*ssa.Functio
 
 	for _, p := range prog.AllPackages() {
 		if fnObj := p.Func(funcName); fnObj != nil {
-			return fnObj, nil
+			return fnObj
 		}
 	}
 	if fnObj := lprog.Func(funcName); fnObj != nil {
-		return fnObj, nil
+		// Debug output of SSA built:
+		// fmt.Printf("\nFunc %s:\n", fnObj.Name())
+		// fnObj.WriteTo(os.Stdout)
+		// fmt.Println()
+		return fnObj
 	}
 
-	return nil, fmt.Errorf("function %s not found", funcName)
+	panicStr := fmt.Sprintf("function %s not found", funcName)
+	panic(panicStr)
 }
