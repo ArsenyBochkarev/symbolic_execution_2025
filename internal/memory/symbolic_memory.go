@@ -5,7 +5,7 @@ import (
 )
 
 type Memory interface {
-	Allocate(tpe symbolic.ExpressionType) *symbolic.Ref
+	Allocate(tpe symbolic.ExpressionType, structName string) *symbolic.Ref
 
 	AssignPrimitive(ref *symbolic.Ref, value symbolic.SymbolicExpression)
 	GetPrimitive(ref *symbolic.Ref) symbolic.SymbolicExpression
@@ -14,7 +14,7 @@ type Memory interface {
 	GetFieldValue(ref *symbolic.Ref, fieldIdx int, fieldTy symbolic.InnerType) symbolic.SymbolicExpression
 
 	// We can reuse AssignField and GetFieldValue for arrays
-	AssignToArray(ref *symbolic.Ref, fieldIdx int, value symbolic.SymbolicExpression)
+	AssignToArray(ref *symbolic.Ref, fieldIdx int, value symbolic.SymbolicExpression) symbolic.SymbolicExpression
 	GetFromArray(ref *symbolic.Ref, fieldIdx int, fieldTy symbolic.InnerType) symbolic.SymbolicExpression
 }
 
