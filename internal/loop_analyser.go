@@ -71,10 +71,8 @@ func analyzeForStmt(forStmt ast.ForStmt, basicUnrollValue int) (string, int, int
 		// RHS
 		if basicLit, ok := binaryExpr.Y.(*ast.BasicLit); ok && basicLit.Kind == token.INT {
 			endValue, _ = strconv.Atoi(basicLit.Value)
-		} else if _, ok := binaryExpr.Y.(*ast.Ident); ok {
-			endValue = basicUnrollValue
 		} else {
-			panic("unsupported RHS in loop condition")
+			endValue = basicUnrollValue
 		}
 	} else {
 		panic("non-binary condition expr")

@@ -5,6 +5,7 @@ type Visitor interface {
 	VisitVariable(expr *SymbolicVariable) interface{}
 	VisitIntConstant(expr *IntConstant) interface{}
 	VisitBoolConstant(expr *BoolConstant) interface{}
+	VisitFloatConstant(expr *FloatConstant) interface{}
 	VisitBinaryOperation(expr *BinaryOperation) interface{}
 	VisitLogicalOperation(expr *LogicalOperation) interface{}
 	VisitTernaryOperation(expr *TernaryOperation) interface{}
@@ -14,4 +15,6 @@ type Visitor interface {
 	VisitRef(expr *Ref) interface{}
 	VisitFieldAccess(expr *FieldAccess) interface{}
 	VisitFieldAssign(expr *FieldAssign) interface{}
+	VisitFieldAccessValueIdx(expr *FieldAccessValueIdx) interface{}
+	VisitFieldAssignValueIdx(expr *FieldAssignValueIdx) interface{}
 }

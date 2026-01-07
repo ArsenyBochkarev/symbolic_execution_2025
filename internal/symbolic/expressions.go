@@ -118,6 +118,31 @@ func (bc *BoolConstant) Accept(visitor Visitor) interface{} {
 	return visitor.VisitBoolConstant(bc)
 }
 
+// FloatConstant представляет целочисленную константу
+type FloatConstant struct {
+	Value float64
+}
+
+// NewFloatConstant создаёт новую целочисленную константу
+func NewFloatConstant(value float64) *FloatConstant {
+	return &FloatConstant{Value: value}
+}
+
+// Type возвращает тип константы
+func (fc *FloatConstant) Type() ExpressionType {
+	return FloatType
+}
+
+// String возвращает строковое представление константы
+func (fc *FloatConstant) String() string {
+	return fmt.Sprintf("%f", fc.Value)
+}
+
+// Accept реализует Visitor pattern
+func (fc *FloatConstant) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFloatConstant(fc)
+}
+
 // BinaryOperation представляет бинарную операцию
 type BinaryOperation struct {
 	Left     SymbolicExpression
@@ -152,6 +177,9 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
 			panic("ArrayType in ADD operation")
 		}
+		if bo.Left.Type() == FloatType || bo.Right.Type() == FloatType {
+			return FloatType
+		}
 		return IntType
 	case SUB:
 		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
@@ -159,6 +187,9 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		}
 		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
 			panic("ArrayType in SUB operation")
+		}
+		if bo.Left.Type() == FloatType || bo.Right.Type() == FloatType {
+			return FloatType
 		}
 		return IntType
 	case MUL:
@@ -168,6 +199,9 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
 			panic("ArrayType in MUL operation")
 		}
+		if bo.Left.Type() == FloatType || bo.Right.Type() == FloatType {
+			return FloatType
+		}
 		return IntType
 	case MOD:
 		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
@@ -176,6 +210,9 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
 			panic("ArrayType in MOD operation")
 		}
+		if bo.Left.Type() == FloatType || bo.Right.Type() == FloatType {
+			panic("FloatType in MOD operation")
+		}
 		return IntType
 	case DIV:
 		if bo.Left.Type() == BoolType || bo.Right.Type() == BoolType {
@@ -183,6 +220,9 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		}
 		if bo.Left.Type() == ArrayType || bo.Right.Type() == ArrayType {
 			panic("ArrayType in DIV operation")
+		}
+		if bo.Left.Type() == FloatType || bo.Right.Type() == FloatType {
+			return FloatType
 		}
 		return IntType
 
@@ -202,6 +242,32 @@ func (bo *BinaryOperation) Type() ExpressionType {
 		return bo.Left.Type()
 	case FIELD_ASSIGN:
 		return bo.Right.Type()
+
+	case XOR:
+		if bo.Left.Type() != IntType || bo.Right.Type() != IntType {
+			panic("Non-integer type in bitwise XOR operation")
+		}
+		return IntType
+	case BITOR:
+		if bo.Left.Type() != IntType || bo.Right.Type() != IntType {
+			panic("Non-integer type in bitwise OR operation")
+		}
+		return IntType
+	case BITAND:
+		if bo.Left.Type() != IntType || bo.Right.Type() != IntType {
+			panic("Non-integer type in bitwise AND operation")
+		}
+		return IntType
+	case SHL:
+		if bo.Left.Type() != IntType || bo.Right.Type() != IntType {
+			panic("Non-integer type in SHL operation")
+		}
+		return IntType
+	case SHR:
+		if bo.Left.Type() != IntType || bo.Right.Type() != IntType {
+			panic("Non-integer type in SHR operation")
+		}
+		return IntType
 
 	default:
 		panic("unknown binary operator")
@@ -294,6 +360,12 @@ const (
 	// Доступ к объектам
 	FIELD_ACCESS
 	FIELD_ASSIGN
+
+	XOR
+	BITOR  // Bitwise OR operation
+	BITAND // Bitwise AND operation
+	SHL    // Shift left
+	SHR    // Shift right
 )
 
 // String возвращает строковое представление оператора
@@ -329,6 +401,16 @@ func (op BinaryOperator) String() string {
 		return "."
 	case FIELD_ASSIGN:
 		return "="
+	case XOR:
+		return "^"
+	case BITOR:
+		return "|"
+	case BITAND:
+		return "&"
+	case SHL:
+		return "<<"
+	case SHR:
+		return ">>"
 	default:
 		return "unknown"
 	}
@@ -465,12 +547,17 @@ func Type2Sort(ctx *z3.Context, ty *InnerType) z3.Sort {
 		return ctx.IntSort()
 	case BoolType:
 		return ctx.BoolSort()
+	case FloatType:
+		return ctx.FloatSort(11, 53) //<-- standart double precision values
 	case ArrayType:
 		return ctx.ArraySort(ctx.IntSort(), Type2Sort(ctx, ty.InnerTy))
 	case ObjectType:
 		panic("ObjectType in Type2Sort")
+	case RefType:
+		return ctx.ArraySort(ctx.IntSort(), ctx.BoolSort()) // FIXME
 
 	default:
+		print(ty.ExprTy.String())
 		panic("unknown type")
 	}
 }
@@ -481,11 +568,15 @@ func Type2Sort2(ctx *z3.Context, expr SymbolicExpression) z3.Sort {
 		return ctx.IntSort()
 	case BoolType:
 		return ctx.BoolSort()
+	case FloatType:
+		return ctx.FloatSort(11, 53) //<-- standart double precision values
 	case ArrayType:
 		innerT := expr.(*SymbolicVariable).InnerType
 		return ctx.ArraySort(ctx.IntSort(), Type2Sort(ctx, &innerT))
 	case ObjectType:
 		panic("ObjectType in Type2Sort2")
+	case RefType:
+		return ctx.IntSort()
 
 	default:
 		panic("unknown type")
@@ -581,6 +672,7 @@ func (ref *Ref) Accept(visitor Visitor) interface{} {
 
 type FieldAccess struct {
 	Obj        SymbolicExpression
+	ObjAddr    *Ref
 	FieldIdx   int
 	Key        SymbolicExpression
 	StructName string
@@ -588,9 +680,10 @@ type FieldAccess struct {
 }
 
 // NewFieldAccess создаёт новое обращение к полю объекта
-func NewFieldAccess(obj SymbolicExpression, Idx int, key SymbolicExpression, structName string, innerTy InnerType) *FieldAccess {
+func NewFieldAccess(obj SymbolicExpression, objAddr *Ref, Idx int, key SymbolicExpression, structName string, innerTy InnerType) *FieldAccess {
 	return &FieldAccess{
 		Obj:        obj,
+		ObjAddr:    objAddr,
 		FieldIdx:   Idx,
 		Key:        key,
 		StructName: structName,
@@ -605,7 +698,7 @@ func (fa *FieldAccess) Type() ExpressionType {
 
 // String возвращает строковое представление доступа к элементу массива
 func (fa *FieldAccess) String() string {
-	return "(" + fa.Obj.String() + ")"
+	return fa.Obj.String() + "." + strconv.Itoa(fa.FieldIdx)
 }
 
 // Accept реализует Visitor pattern
@@ -615,15 +708,17 @@ func (fa *FieldAccess) Accept(visitor Visitor) interface{} {
 
 type FieldAssign struct {
 	Obj        SymbolicExpression
+	ObjAddr    *Ref
 	FieldIdx   int
 	Value      SymbolicExpression
 	StructName string
 }
 
 // NewFieldAccess создаёт новое обращение к полю объекта
-func NewFieldAssign(obj SymbolicExpression, Idx int, v SymbolicExpression, structName string) *FieldAssign {
+func NewFieldAssign(obj SymbolicExpression, objAddr *Ref, Idx int, v SymbolicExpression, structName string) *FieldAssign {
 	return &FieldAssign{
 		Obj:        obj,
+		ObjAddr:    objAddr,
 		FieldIdx:   Idx,
 		Value:      v,
 		StructName: structName,
@@ -643,4 +738,75 @@ func (fa *FieldAssign) String() string {
 // Accept реализует Visitor pattern
 func (fa *FieldAssign) Accept(visitor Visitor) interface{} {
 	return visitor.VisitFieldAssign(fa)
+}
+
+// Below are the same as above, but with SymbolicExpression as field indexes
+
+type FieldAccessValueIdx struct {
+	Obj        SymbolicExpression
+	ObjAddr    *Ref
+	FieldIdx   SymbolicExpression
+	Key        SymbolicExpression
+	StructName string
+	InnerTy    InnerType
+}
+
+// NewFieldAccess создаёт новое обращение к полю объекта
+func NewFieldAccessValueIdx(obj SymbolicExpression, objAddr *Ref, Idx SymbolicExpression, structName string, innerTy InnerType) *FieldAccessValueIdx {
+	return &FieldAccessValueIdx{
+		Obj:        obj,
+		ObjAddr:    objAddr,
+		FieldIdx:   Idx,
+		StructName: structName,
+		InnerTy:    innerTy,
+	}
+}
+
+// Type возвращает тип поля
+func (fa *FieldAccessValueIdx) Type() ExpressionType {
+	return fa.Obj.Type()
+}
+
+// String возвращает строковое представление доступа к элементу массива
+func (fa *FieldAccessValueIdx) String() string {
+	return fa.Obj.String() + "." + fa.FieldIdx.String()
+}
+
+// Accept реализует Visitor pattern
+func (fa *FieldAccessValueIdx) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFieldAccessValueIdx(fa)
+}
+
+type FieldAssignValueIdx struct {
+	Obj        SymbolicExpression
+	ObjAddr    *Ref
+	FieldIdx   SymbolicExpression
+	Value      SymbolicExpression
+	StructName string
+}
+
+// NewFieldAccess создаёт новое обращение к полю объекта
+func NewFieldAssignValueIdx(obj SymbolicExpression, objAddr *Ref, Idx SymbolicExpression, v SymbolicExpression, structName string) *FieldAssignValueIdx {
+	return &FieldAssignValueIdx{
+		Obj:        obj,
+		ObjAddr:    objAddr,
+		FieldIdx:   Idx,
+		Value:      v,
+		StructName: structName,
+	}
+}
+
+// Type возвращает тип поля
+func (fa *FieldAssignValueIdx) Type() ExpressionType {
+	return fa.Value.Type()
+}
+
+// String возвращает строковое представление переменной
+func (fa *FieldAssignValueIdx) String() string {
+	return "(" + fa.Obj.String() + "." + fa.FieldIdx.String() + "=" + fa.Value.String() + ")"
+}
+
+// Accept реализует Visitor pattern
+func (fa *FieldAssignValueIdx) Accept(visitor Visitor) interface{} {
+	return visitor.VisitFieldAssignValueIdx(fa)
 }
