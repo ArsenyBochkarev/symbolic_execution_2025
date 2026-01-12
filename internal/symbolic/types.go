@@ -11,6 +11,7 @@ const (
 	FunctionType
 	ObjectType
 	RefType
+	FloatType
 	// Добавьте другие типы по необходимости
 )
 
@@ -26,6 +27,8 @@ func (et ExpressionType) String() string {
 		return "int"
 	case BoolType:
 		return "bool"
+	case FloatType:
+		return "float"
 	case ArrayType:
 		return "array"
 	case FunctionType:

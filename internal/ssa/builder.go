@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -54,19 +55,30 @@ func (b *Builder) ParseAndBuildSSA(source string, funcName string) *ssa.Function
 	_ = prog
 	lprog.Build()
 
-	for _, p := range prog.AllPackages() {
-		if fnObj := p.Func(funcName); fnObj != nil {
-			return fnObj
+	fullFuncName := funcName
+	if member, ok := lprog.Members["InvokeClass"]; ok {
+		if typeName, ok := member.(*ssa.Type); ok {
+			mset := lprog.Prog.MethodSets.MethodSet(types.NewPointer(typeName.Type()))
+			selection := mset.Lookup(pkg, funcName)
+			if selection != nil {
+				fnObj := lprog.Prog.MethodValue(selection)
+				// Debug output of SSA built:
+				fmt.Printf("\nFunc %s:\n", fnObj.Name())
+				fnObj.WriteTo(os.Stdout)
+				fmt.Println()
+				return fnObj
+			}
 		}
 	}
+
 	if fnObj := lprog.Func(funcName); fnObj != nil {
 		// Debug output of SSA built:
-		// fmt.Printf("\nFunc %s:\n", fnObj.Name())
-		// fnObj.WriteTo(os.Stdout)
-		// fmt.Println()
+		fmt.Printf("\nFunc %s:\n", fnObj.Name())
+		fnObj.WriteTo(os.Stdout)
+		fmt.Println()
 		return fnObj
 	}
 
-	panicStr := fmt.Sprintf("function %s not found", funcName)
+	panicStr := fmt.Sprintf("function %s not found", fullFuncName)
 	panic(panicStr)
 }

@@ -12,6 +12,8 @@ type Memory interface {
 
 	AssignField(ref *symbolic.Ref, fieldIdx int, value symbolic.SymbolicExpression) symbolic.SymbolicExpression
 	GetFieldValue(ref *symbolic.Ref, fieldIdx int, fieldTy symbolic.InnerType) symbolic.SymbolicExpression
+	AssignFieldFromValue(ref *symbolic.Ref, fieldIdx symbolic.SymbolicExpression, value symbolic.SymbolicExpression) symbolic.SymbolicExpression
+	GetFieldValueFromValue(ref *symbolic.Ref, fieldIdx symbolic.SymbolicExpression, fieldTy symbolic.InnerType) symbolic.SymbolicExpression
 
 	// We can reuse AssignField and GetFieldValue for arrays
 	AssignToArray(ref *symbolic.Ref, fieldIdx int, value symbolic.SymbolicExpression) symbolic.SymbolicExpression
@@ -61,15 +63,26 @@ func (mem *SymbolicMemory) AssignField(ref *symbolic.Ref, fieldIdx int, value sy
 	if mem.ObjectsMap[ref.ObjectAddr] == nil {
 		mem.ObjectsMap[ref.ObjectAddr] = make(map[int]symbolic.SymbolicExpression)
 	}
-	res := symbolic.NewFieldAssign(ref.Expr, fieldIdx, value, ref.StructName)
+	res := symbolic.NewFieldAssign(ref.Expr, ref, fieldIdx, value, ref.StructName)
 	mem.ObjectsMap[ref.ObjectAddr][fieldIdx] = ref.Expr // Remembering expression with assign
+	ref.Expr = res
+	return res
+}
+func (mem *SymbolicMemory) AssignFieldFromValue(ref *symbolic.Ref, fieldIdx symbolic.SymbolicExpression, value symbolic.SymbolicExpression) symbolic.SymbolicExpression {
+	if mem.ObjectsMap[ref.ObjectAddr] == nil {
+		mem.ObjectsMap[ref.ObjectAddr] = make(map[int]symbolic.SymbolicExpression)
+	}
+	res := symbolic.NewFieldAssignValueIdx(ref.Expr, ref, fieldIdx, value, ref.StructName)
 	ref.Expr = res
 	return res
 }
 
 func (mem *SymbolicMemory) GetFieldValue(ref *symbolic.Ref, fieldIdx int, fieldTy symbolic.InnerType) symbolic.SymbolicExpression {
 	key := mem.ObjectsMap[ref.ObjectAddr][fieldIdx] // Get expression for assign (its String() will be used as key)
-	return symbolic.NewFieldAccess(ref.Expr, fieldIdx, key, ref.StructName, fieldTy)
+	return symbolic.NewFieldAccess(ref.Expr, ref, fieldIdx, key, ref.StructName, fieldTy)
+}
+func (mem *SymbolicMemory) GetFieldValueFromValue(ref *symbolic.Ref, fieldIdx symbolic.SymbolicExpression, fieldTy symbolic.InnerType) symbolic.SymbolicExpression {
+	return symbolic.NewFieldAccessValueIdx(ref.Expr, ref, fieldIdx, ref.StructName, fieldTy)
 }
 
 func (mem *SymbolicMemory) AssignToArray(ref *symbolic.Ref, index int, value symbolic.SymbolicExpression) symbolic.SymbolicExpression {

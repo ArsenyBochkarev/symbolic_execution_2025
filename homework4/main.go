@@ -70,4 +70,25 @@ func testFunction(a, b int) int {
 	for _, interpreter := range result4 {
 		fmt.Println(interpreter.ToString())
 	}
+
+	source5 := `
+	package main
+
+		func testFunction5(n int) int {
+			result := 0
+			for i := 1; i < n; i++ {
+				result += i
+				if (result > 30) {
+					return 30
+				}
+			}
+			return result
+		}
+	
+	`
+
+	result5 := internal.Analyse(source5, "testFunction5")
+	for _, interpreter := range result5 {
+		fmt.Println(interpreter.ToString())
+	}
 }

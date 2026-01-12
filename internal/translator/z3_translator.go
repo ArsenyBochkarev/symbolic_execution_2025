@@ -73,9 +73,13 @@ func (zt *Z3Translator) VisitVariable(expr *symbolic.SymbolicVariable) interface
 		z = zt.ctx.IntConst(expr.Name)
 	case symbolic.BoolType:
 		z = zt.ctx.BoolConst(expr.Name)
+	case symbolic.FloatType:
+		z = zt.ctx.Const(expr.Name, zt.ctx.FloatSort(11, 53) /*<-- standart double precision values*/).(z3.Float)
 	case symbolic.ArrayType:
 		as := zt.ctx.ArraySort(zt.ctx.IntSort(), symbolic.Type2Sort(zt.ctx, &expr.InnerType))
 		z = zt.ctx.Const(expr.Name, as)
+	case symbolic.RefType: // 'nil', for example
+		z = zt.ctx.IntConst("nil")
 
 	default:
 		panic("unsupported variable type")
@@ -96,6 +100,11 @@ func (zt *Z3Translator) VisitIntConstant(expr *symbolic.IntConstant) interface{}
 func (zt *Z3Translator) VisitBoolConstant(expr *symbolic.BoolConstant) interface{} {
 	// Использовать zt.ctx.FromBool для создания Z3 булевой константы
 	return zt.ctx.FromBool(expr.Value)
+}
+
+// VisitFloatConstant транслирует floating-point константу в Z3
+func (zt *Z3Translator) VisitFloatConstant(expr *symbolic.FloatConstant) interface{} {
+	return zt.ctx.FromFloat64(expr.Value, zt.ctx.FloatSort(11, 53) /*<-- standart double precision values*/)
 }
 
 func Field2Key(name string, index int) string {
@@ -124,6 +133,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Mul(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).Mul(rightOp.(z3.Float))
 		case symbolic.ArrayType:
 			// Case for objects fields: addition with 0-indexed element
 			bigint := big.NewInt(0)
@@ -137,6 +148,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Add(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).Add(rightOp.(z3.Float))
 		case symbolic.ArrayType:
 			// Case for objects fields: addition with 0-indexed element
 			bigint := big.NewInt(0)
@@ -150,6 +163,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Sub(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).Sub(rightOp.(z3.Float))
 		case symbolic.ArrayType:
 			// Case for objects fields: addition with 0-indexed element
 			bigint := big.NewInt(0)
@@ -163,6 +178,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Div(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).Div(rightOp.(z3.Float))
 		case symbolic.ArrayType:
 			// Case for objects fields: addition with 0-indexed element
 			bigint := big.NewInt(0)
@@ -176,6 +193,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).Mod(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			panic("MOD for FloatType is unsupported")
 		case symbolic.ArrayType:
 			// Case for objects fields: addition with 0-indexed element
 			bigint := big.NewInt(0)
@@ -195,9 +214,14 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 			return leftOp.(z3.Bool).Eq(rightOp.(z3.Bool))
 		case symbolic.ArrayType:
 			return leftOp.(z3.Array).Eq(rightOp.(z3.Array))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).Eq(rightOp.(z3.Float))
 		case symbolic.ObjectType:
 			// ObjectType here means field access
 			return leftOp.(z3.Int).Eq(rightOp.(z3.Int)) // FIXME !!!!!!!!!
+		case symbolic.RefType:
+			// Comparing addresses
+			return leftOp.(z3.Int).Eq(rightOp.(z3.Int))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -207,6 +231,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 			return leftOp.(z3.Int).NE(rightOp.(z3.Int))
 		case symbolic.BoolType:
 			return leftOp.(z3.Bool).NE(rightOp.(z3.Bool))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).NE(rightOp.(z3.Float))
 		case symbolic.ArrayType:
 			return leftOp.(z3.Array).NE(rightOp.(z3.Array))
 		}
@@ -214,6 +240,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).GE(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).GE(rightOp.(z3.Float))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -221,6 +249,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).GT(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).GT(rightOp.(z3.Float))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -228,6 +258,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).LE(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).LE(rightOp.(z3.Float))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -235,6 +267,8 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		switch expr.Left.Type() {
 		case symbolic.IntType:
 			return leftOp.(z3.Int).LT(rightOp.(z3.Int))
+		case symbolic.FloatType:
+			return leftOp.(z3.Float).LT(rightOp.(z3.Float))
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
@@ -272,6 +306,82 @@ func (zt *Z3Translator) VisitBinaryOperation(expr *symbolic.BinaryOperation) int
 		default:
 			panic("unknown type in VisitBinaryOperation")
 		}
+
+	case symbolic.XOR:
+		if expr.Left.Type() != symbolic.IntType || expr.Right.Type() != symbolic.IntType {
+			panic("Non-integer type for bitwise XOR")
+		}
+		leftAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		leftBI := big.NewInt(leftAsInt)
+		left := zt.ctx.FromBigInt(leftBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		rightAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		rightBI := big.NewInt(rightAsInt)
+		right := zt.ctx.FromBigInt(rightBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		res, _, _ := left.Xor(right).AsInt64()
+		bigint := big.NewInt(res)
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+	case symbolic.BITOR:
+		if expr.Left.Type() != symbolic.IntType || expr.Right.Type() != symbolic.IntType {
+			panic("Non-integer type for bitwise OR")
+		}
+		leftAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		leftBI := big.NewInt(leftAsInt)
+		left := zt.ctx.FromBigInt(leftBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		rightAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		rightBI := big.NewInt(rightAsInt)
+		right := zt.ctx.FromBigInt(rightBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		res, _, _ := left.Or(right).AsInt64()
+		bigint := big.NewInt(res)
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+	case symbolic.BITAND:
+		if expr.Left.Type() != symbolic.IntType || expr.Right.Type() != symbolic.IntType {
+			panic("Non-integer type for bitwise AND")
+		}
+		leftAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		leftBI := big.NewInt(leftAsInt)
+		left := zt.ctx.FromBigInt(leftBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		rightAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		rightBI := big.NewInt(rightAsInt)
+		right := zt.ctx.FromBigInt(rightBI, zt.ctx.BVSort(32)).(z3.BV)
+
+		res, _, _ := left.And(right).AsInt64()
+		bigint := big.NewInt(res)
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+	case symbolic.SHL:
+		if expr.Left.Type() != symbolic.IntType || expr.Right.Type() != symbolic.IntType {
+			panic("Non-integer type for SHL")
+		}
+		leftAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		leftBI := big.NewInt(leftAsInt)
+		left := zt.ctx.FromBigInt(leftBI, zt.ctx.BVSort(64)).(z3.BV)
+
+		rightAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		rightBI := big.NewInt(rightAsInt)
+		right := zt.ctx.FromBigInt(rightBI, zt.ctx.BVSort(64)).(z3.BV)
+
+		res, _, _ := left.Lsh(right).AsInt64()
+		bigint := big.NewInt(res)
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
+	case symbolic.SHR:
+		if expr.Left.Type() != symbolic.IntType || expr.Right.Type() != symbolic.IntType {
+			panic("Non-integer type for SHR")
+		}
+		leftAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		leftBI := big.NewInt(leftAsInt)
+		left := zt.ctx.FromBigInt(leftBI, zt.ctx.BVSort(64)).(z3.BV)
+
+		rightAsInt, _, _ := leftOp.(z3.Int).AsInt64()
+		rightBI := big.NewInt(rightAsInt)
+		right := zt.ctx.FromBigInt(rightBI, zt.ctx.BVSort(64)).(z3.BV)
+
+		res, _, _ := left.URsh(right).AsInt64()
+		bigint := big.NewInt(res)
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
 
 	default:
 		panic("unknown binary operation")
@@ -364,9 +474,11 @@ func (zt *Z3Translator) VisitRef(expr *symbolic.Ref) interface{} {
 	case symbolic.Primitive:
 		return zt.mem.GetPrimitive(expr).(z3.Value)
 	case symbolic.Object:
-		return expr.ObjectAddr
+		bigint := big.NewInt(int64(expr.ObjectAddr))
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
 	default:
-		return expr.ArrayAddr
+		bigint := big.NewInt(int64(expr.ArrayAddr))
+		return zt.ctx.FromBigInt(bigint, zt.ctx.IntSort())
 	}
 }
 
@@ -399,6 +511,32 @@ func (zt *Z3Translator) VisitFieldAssign(expr *symbolic.FieldAssign) interface{}
 
 	val := expr.Value.Accept(zt)
 	zt.objArrays[fieldName] = zt.objArrays[fieldName].Store(index, val.(z3.Value))
+	return zt.objArrays[fieldName]
+}
+
+func (zt *Z3Translator) VisitFieldAccessValueIdx(expr *symbolic.FieldAccessValueIdx) interface{} {
+	fieldName := Field2Key2(expr.StructName, expr.FieldIdx.String())
+	_, ok := zt.objArrays[fieldName]
+	if !ok {
+		as := zt.ctx.ArraySort(zt.ctx.IntSort(), symbolic.Type2Sort(zt.ctx, &expr.InnerTy))
+		z := zt.ctx.Const(expr.Obj.String(), as)
+		zt.objArrays[fieldName] = z.(z3.Array)
+	}
+
+	return zt.objArrays[fieldName].Select(expr.FieldIdx.Accept(zt).(z3.Value))
+}
+
+func (zt *Z3Translator) VisitFieldAssignValueIdx(expr *symbolic.FieldAssignValueIdx) interface{} {
+	fieldName := Field2Key2(expr.StructName, expr.FieldIdx.String())
+	_, ok := zt.objArrays[fieldName]
+	if !ok {
+		as := zt.ctx.ArraySort(zt.ctx.IntSort(), symbolic.Type2Sort2(zt.ctx, expr.Value))
+		z := zt.ctx.Const(expr.Obj.String(), as)
+		zt.objArrays[fieldName] = z.(z3.Array)
+	}
+
+	val := expr.Value.Accept(zt)
+	zt.objArrays[fieldName] = zt.objArrays[fieldName].Store(expr.FieldIdx.Accept(zt).(z3.Value), val.(z3.Value))
 	return zt.objArrays[fieldName]
 }
 

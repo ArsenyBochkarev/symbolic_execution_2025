@@ -13,10 +13,13 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-// TODO: Other relation operators
-// TODO: Other operations for induction variable (`+=`, `-=`, etc)
-// TODO: Non-invariant end values
-func analyzeForStmt(forStmt ast.ForStmt) (string, int, int, int) {
+// Loop in form:
+// for i := a; i rel b; op, where
+// - a should be const
+// - rel can be `<`, `>`, `<=`, `>=`
+// - b can be non-invariant
+// - op can be `++`, `--`, `+=`, `-=`
+func analyzeForStmt(forStmt ast.ForStmt, basicUnrollValue int) (string, int, int, int, bool) {
 	var indVarName string
 	var startValue, endValue int
 
@@ -42,12 +45,25 @@ func analyzeForStmt(forStmt ast.ForStmt) (string, int, int, int) {
 	}
 
 	var isIncluding bool
+	var direction int // 1 -- incr, -1 -- decr
 	if binaryExpr, ok := forStmt.Cond.(*ast.BinaryExpr); ok {
 		switch binaryExpr.Op {
 		case token.LSS: // "<"
 			isIncluding = true
+			direction = 1
 		case token.LEQ: // "<="
 			isIncluding = false
+			direction = 1
+		case token.GTR: // ">"
+			isIncluding = true
+			direction = -1
+		case token.GEQ: // ">="
+			isIncluding = false
+			direction = -1
+		case token.EQL: // "=="
+			panic("`==` operator in for loop condition is not supported for unrolling")
+		case token.NEQ: // "!="
+			panic("`!=` operator in for loop condition is not supported for unrolling")
 		default:
 			panic("unsupported relation operator")
 		}
@@ -56,17 +72,10 @@ func analyzeForStmt(forStmt ast.ForStmt) (string, int, int, int) {
 		if basicLit, ok := binaryExpr.Y.(*ast.BasicLit); ok && basicLit.Kind == token.INT {
 			endValue, _ = strconv.Atoi(basicLit.Value)
 		} else {
-			panic("non-invariant RHS in loop condition")
+			endValue = basicUnrollValue
 		}
 	} else {
 		panic("non-binary condition expr")
-	}
-
-	var iterationCount int
-	if isIncluding {
-		iterationCount = endValue - startValue
-	} else {
-		iterationCount = endValue - startValue + 1
 	}
 
 	var stepValue int
@@ -79,18 +88,71 @@ func analyzeForStmt(forStmt ast.ForStmt) (string, int, int, int) {
 		default:
 			panic("unsupported operation for induction variable step")
 		}
+	} else if assignStmt, ok := forStmt.Post.(*ast.AssignStmt); ok {
+		// +=, -=
+		if len(assignStmt.Lhs) == 1 {
+			if ident, ok := assignStmt.Lhs[0].(*ast.Ident); ok && ident.Name == indVarName {
+				if len(assignStmt.Rhs) == 1 {
+					switch assignStmt.Tok {
+					case token.ADD_ASSIGN:
+						if e, ok := assignStmt.Rhs[0].(*ast.BasicLit); ok {
+							stepValue, _ = strconv.Atoi(e.Value)
+						} else {
+							panic("non-invariant steps unsupported")
+						}
+					case token.SUB_ASSIGN:
+						if e, ok := assignStmt.Rhs[0].(*ast.BasicLit); ok {
+							stepValue, _ = strconv.Atoi(e.Value)
+							stepValue = (-1) * stepValue
+						} else {
+							panic("non-invariant steps unsupported")
+						}
+					default:
+						panic("unsupported operation")
+					}
+				}
+			} else {
+				panic("post statement modifies different variable")
+			}
+		}
+	} else if forStmt.Post != nil {
+		panic("unsupported post statement type")
 	}
 
-	return indVarName, startValue, iterationCount, stepValue
+	var iterationCount int
+	if direction > 0 {
+		if isIncluding {
+			iterationCount = (endValue - startValue + stepValue) / stepValue
+		} else {
+			iterationCount = (endValue - startValue) / stepValue
+		}
+	} else {
+		if isIncluding {
+			iterationCount = (startValue - endValue + (-stepValue)) / (-stepValue)
+		} else {
+			iterationCount = (startValue - endValue) / (-stepValue)
+		}
+	}
+	if iterationCount < 0 {
+		iterationCount = 0
+	}
+
+	return indVarName, startValue, iterationCount, stepValue, direction > 0
 }
 
 func applyForCursor(cursor *astutil.Cursor) bool {
 	if forStmt, ok := cursor.Node().(*ast.ForStmt); ok {
-		indVarName, startValue, iterationCount, stepValue := analyzeForStmt(*forStmt)
+		indVarName, startValue, iterationCount, stepValue, increasing := analyzeForStmt(*forStmt, 10 /*=basicUnrollValue*/)
 
 		var newStatements []ast.Stmt
 		for i := range iterationCount {
-			currentValue := startValue + i*stepValue
+			var currentValue int
+			if increasing {
+				currentValue = startValue + i*stepValue
+			} else {
+				currentValue = startValue - i*(-stepValue)
+			}
+
 			for _, stmt := range forStmt.Body.List {
 				copiedStmt := astcopy.Stmt(stmt)
 				newStmt := replaceIdentWithValue(copiedStmt, indVarName, currentValue)
